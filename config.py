@@ -142,6 +142,13 @@ SYMBOLS_LIST = [
     "BLURUSDT",
     "REDUSDT",
     "UMAUSDT",
+    "SOONUSDT",
+    "INUSDT",
+    "COWUSDT",
+    "SLPUSDT",
+    "TREEUSDT",
+    "TAUSDT",
+
 
     # coin list to be check
 ]

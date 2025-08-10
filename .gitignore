@@ -1,0 +1,5 @@
+        report.txt
+        venv/
+        datafiles/
+        .DS_Store
+        __pycache__/
