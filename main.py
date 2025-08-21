@@ -2,12 +2,17 @@
 
 from fetch_data import fetch_all_data, save_data_to_excel
 from fetch_data import generate_report, fetch_and_update_data
+from datetime import datetime
+from notice import send_email_report
 
 import schedule
 import time
-from datetime import datetime
+import subprocess
 
-if __name__ == "__main__":
+import schedule
+import time
+
+def main():
     try:
         # Fetch dữ liệu cho tất cả các đồng coin
         print("Fetching data for all symbols...")
@@ -29,5 +34,16 @@ if __name__ == "__main__":
             generate_report(all_data)
             print("Report generated and saved to report.txt.")
 
+            # Gửi email nếu report có nội dung
+            send_email_report()
     except Exception as e:
         print(f"An error occurred: {e}")
+
+if __name__ == "__main__":
+    # Lên lịch chạy mỗi 15 phút
+    schedule.every(15).minutes.do(main)
+
+    print("⏳ Scheduler started, will run every 15 minutes...")
+    while True:
+        schedule.run_pending()
+        time.sleep(1)
