@@ -101,7 +101,7 @@ def generate_report(all_data):
                     formatted_timestamp = last_timestamp.strftime('%Y-%m-%d %H:%M:%S')
 
                     # Điều kiện: delta_change > 0 và volume >= 3 lần trung bình 20 nến
-                    if last_delta_change > 0 and last_volume >= 2.5 * avg_volume_20:
+                    if last_delta_change > 0 and last_volume >= 2.8 * avg_volume_20:
                         # Ghi vào file report
                         file.write(f"{symbol} - Delta Change: {last_delta_change:.4f} at {formatted_timestamp}\n")
                 except Exception as e:
