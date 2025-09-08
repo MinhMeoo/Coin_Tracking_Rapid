@@ -44,6 +44,3 @@ def send_email_report():
         print("✅ Report sent successfully (inline content).")
     except Exception as e:
         print(f"❌ Error sending email: {e}")
-
-if __name__ == "__main__":
-        send_email_report()

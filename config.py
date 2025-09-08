@@ -135,7 +135,6 @@ SYMBOLS_LIST = [
     "KERNELUSDT",
     "TRUMPUSDT",
     "CUSDT",
-    "FILUSDT",
     "EPICUSDT",
     "FISUSDT"
 
