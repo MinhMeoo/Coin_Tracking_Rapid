@@ -5,7 +5,14 @@ from email.mime.base import MIMEBase
 from email import encoders
 import ssl
 import os
+
+
 def send_email_report():
+    EMAIL_SEND_COUNT = 0
+    EMAIL_SEND_COUNT += 1
+    print(f"[DEBUG] send_email_report TRIGGERED ({EMAIL_SEND_COUNT} times)")
+
+
     sender_email = "nguyenvanminh180299@gmail.com"
     receiver_emails = ["nguyenhaidang9xbk@gmail.com", "minhthuy06042021@gmail.com"]
     app_password = "omrf wgwg hngs cqam"  # mật khẩu ứng dụng
@@ -41,6 +48,7 @@ def send_email_report():
             server.login(sender_email, app_password)
             server.sendmail(sender_email, receiver_emails, message.as_string())
 
-        print("✅ Report sent successfully (inline content).")
+        print(f"✅ Report sent successfully (inline content). Count={EMAIL_SEND_COUNT}")
+
     except Exception as e:
         print(f"❌ Error sending email: {e}")

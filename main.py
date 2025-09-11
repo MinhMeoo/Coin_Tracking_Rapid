@@ -14,7 +14,7 @@ import pandas as pd
 from datetime import datetime, timedelta, timezone
 
 # --- Cấu hình ---
-DATA_FOLDER = "/Users/minhmeoow/MiniProject_Python/Coin_tracking_rapid_test_m15/datafiles"
+DATA_FOLDER = "./datafiles"
 os.makedirs(DATA_FOLDER, exist_ok=True)
 
 REPORT_READY = False
@@ -58,15 +58,17 @@ def wait_until_next_quarter():
     else:
         next_run = now.replace(minute=minute, second=0, microsecond=0)
 
-    if next_run.hour < 6:
+    # Giới hạn khung giờ 6:00–20:00
+    if now.hour < 6:
         next_run = now.replace(hour=6, minute=0, second=0, microsecond=0)
-    elif next_run.hour >= 23:
+    elif now.hour >= 23:
         tomorrow = now + timedelta(days=1)
         next_run = tomorrow.replace(hour=6, minute=0, second=0, microsecond=0)
 
     sleep_seconds = (next_run - now).total_seconds()
     print(f"⏸ Sleeping until {next_run.strftime('%Y-%m-%d %H:%M:%S')}")
     time.sleep(sleep_seconds)
+
 
 
 # --- Vòng lặp chính ---
@@ -92,7 +94,6 @@ if __name__ == "__main__":
                 try:
                     df = pd.read_excel(excel_file)
                     last_ts = pd.to_datetime(df["timestamp"].iloc[-1])
-                    print(f"[DEBUG] {symbol}: last_ts from file = {last_ts} (tzinfo={last_ts.tzinfo})")
 
                     if last_ts.tzinfo is None:
                         last_ts = last_ts.tz_localize("UTC")
@@ -108,11 +109,9 @@ if __name__ == "__main__":
 
                 now_utc = datetime.utcnow().replace(tzinfo=timezone.utc)
                 gap_minutes = (now_utc - last_ts).total_seconds() / 60
-                print(f"[DEBUG] {symbol}: now_utc = {now_utc}, last_ts = {last_ts}, gap_minutes = {gap_minutes}")
 
                 if gap_minutes > 60:
                     fetch_full = True
-                    print(f"[DEBUG] {symbol}: gap_minutes > 60 → fetch_full = True")
                     break
             else:
                 fetch_full = False

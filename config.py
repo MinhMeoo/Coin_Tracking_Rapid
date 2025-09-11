@@ -108,9 +108,7 @@ SYMBOLS_LIST = [
     "FXSUSDT",
     "TUSDT",
     "REIUSDT",
-    "HIFIUSDT",
     "SYNUSDT",
-    "LOKAUSDT",
     "SEIUSDT",
     "ICNTUSDT",
     "ZETAUSDT",
@@ -136,7 +134,23 @@ SYMBOLS_LIST = [
     "TRUMPUSDT",
     "CUSDT",
     "EPICUSDT",
-    "FISUSDT"
+    "FISUSDT",
+    "NAORISUSDT",
+    "CUDISUSDT",
+    "WLDUSDT",
+    "PLAYUSDT",
+    "GRIFFAINUSDT",
+    "BASUSDT",
+    "ATHUSDT",
+    "DAMUSDT",
+    "BTRUSDT",
+    "TURBOUSDT",
+    "POPCATUSDT",
+    "CGPTUSDT",
+    "1000SATSUSDT",
+    "PUMPUSDT",
+    "AVNTUSDT",
+    "ACEUSDT"
 
     # coin list to be check
 ]
