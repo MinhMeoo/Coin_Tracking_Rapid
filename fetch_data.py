@@ -5,7 +5,7 @@ from config import SYMBOLS_LIST
 
 import time
 from datetime import datetime, timedelta
-from typing import Optional
+from typing import Dict, Optional, List
 
 
 INTERVAL_MS = 15 * 60 * 1000  # 15 minutes in ms
@@ -19,8 +19,12 @@ def get_binance_server_time() -> int:
     resp = requests.get(url, timeout=5)
     resp.raise_for_status()
     return int(resp.json()["serverTime"])
-#  Ham nay fetch du data 30 nen, thuong duoc call vao luc 6h sang
 
+
+
+
+
+#  Ham nay fetch du data 30 nen, thuong duoc call vao luc 6h sang
 def fetch_15m_closed_klines(
     symbol: str,
     limit: int = 30,
@@ -106,24 +110,20 @@ def fetch_15m_closed_klines(
             else:
                 return None
 
-#  ham nay call vao moi 15p
 
+
+
+#  ham nay call vao moi 15p
 def fetch_append_latest_15m_candle(
     symbol: str,
     excel_file: str,
     server_ms: Optional[int] = None,
     retries: int = 2,
     delay_retry: float = 1.0,
-) -> None:
+) -> Optional[pd.DataFrame]:
     """
     Lấy 1 nến 15m mới nhất và append vào cuối file Excel.
-    
-    Args:
-        symbol (str): ví dụ "BTCUSDT"
-        excel_file (str): đường dẫn file Excel
-        server_ms (Optional[int]): Thời gian server Binance (ms). Nếu None sẽ tự fetch.
-        retries (int): số lần retry khi lỗi request
-        delay_retry (float): thời gian chờ (giây) giữa các lần retry
+    Trả về DataFrame mới sau khi cập nhật (hoặc None nếu lỗi).
     """
     try:
         # đọc dữ liệu cũ nếu có
@@ -132,59 +132,53 @@ def fetch_append_latest_15m_candle(
         else:
             df_old = pd.DataFrame()
 
-        # # lấy thời gian server Binance nếu chưa có
-        # if server_ms is None:
-        #     for attempt in range(1, retries + 1):
-        #         try:
-        #             server_ms = get_binance_server_time()
-        #             break
-        #         except Exception as e:
-        #             print(f"[{datetime.now()}] ⚠️ Error get server time (attempt {attempt}/{retries}): {e}")
-        #             if attempt < retries:
-        #                 time.sleep(delay_retry)
-        #                 continue
-        #             else:
-        #                 return
-
+        # tính boundary dựa vào server_ms (được truyền từ ngoài vào)
         boundary_ms = (server_ms // INTERVAL_MS) * INTERVAL_MS
         end_time_ms = boundary_ms - 1  # nến đóng ngay trước boundary
 
+        # fetch dữ liệu
         url = "https://fapi.binance.com/fapi/v1/klines"
         params = {
             "symbol": symbol.upper(),
             "interval": "15m",
             "limit": 1,
-            "endTime": end_time_ms
+            "endTime": end_time_ms,
         }
 
-        resp = requests.get(url, params=params, timeout=10)
-        resp.raise_for_status()
+        resp = None
+        for attempt in range(1, retries + 1):
+            try:
+                resp = requests.get(url, params=params, timeout=10)
+                resp.raise_for_status()
+                break
+            except Exception as e:
+                print(f"[{datetime.now()}] ⚠️ Error fetching {symbol} (attempt {attempt}/{retries}): {e}")
+                if attempt < retries:
+                    time.sleep(delay_retry)
+                    continue
+                else:
+                    return None
+
         data = resp.json()
         if not data:
             print(f"[{datetime.now()}] ⚠️ No new candle for {symbol}")
-            return
+            return None
 
+        # build df_new
         df_new = pd.DataFrame(data, columns=[
             "open_time", "open", "high", "low", "close", "volume",
             "close_time", "quote_asset_volume", "number_of_trades",
             "taker_buy_base", "taker_buy_quote", "ignore"
         ])
-
-        # convert kiểu
         df_new["open_time"] = pd.to_datetime(df_new["open_time"], unit="ms")
         df_new["close_time"] = pd.to_datetime(df_new["close_time"], unit="ms")
         numeric_cols = ["open", "high", "low", "close", "volume"]
         df_new[numeric_cols] = df_new[numeric_cols].apply(pd.to_numeric, errors="coerce")
-
-        # tính các cột cần thiết
         df_new["delta_change"] = (df_new["close"] - df_new["open"]) / df_new["open"]
-
-        # rename open_time → timestamp trước khi append
         df_new.rename(columns={"open_time": "timestamp"}, inplace=True)
 
-        # append dữ liệu mới vào df_old
+        # append dữ liệu mới
         if not df_old.empty:
-            # tránh duplicate nến
             if df_new["timestamp"].iloc[0] <= df_old["timestamp"].iloc[-1]:
                 print(f"[{datetime.now()}] Candle already exists for {symbol}, skip")
                 df = df_old.copy()
@@ -193,21 +187,26 @@ def fetch_append_latest_15m_candle(
         else:
             df = df_new.copy()
 
-        # tính lại average_volume_20 cho toàn bộ bảng
+        # tính lại average_volume_20
         df["average_volume_20"] = df["volume"].rolling(20).mean().shift(1)
 
-        # giữ các cột cần thiết
+        # giữ cột cần thiết
         cols_keep = ["timestamp", "open", "high", "low", "close", "volume", "delta_change", "average_volume_20"]
         df_out = df[cols_keep].copy()
 
-        # lưu Excel
+        # lưu ra Excel
         df_out.to_excel(excel_file, index=False)
 
+        return df_out
+
     except Exception as e:
-        print(f"[{datetime.now()}] ⚠️ Error fetching/appending candle for {symbol}: {e}")
+        print(f"[{datetime.now()}] ⚠️ Error in fetch_append_latest_15m_candle for {symbol}: {e}")
+        return None
 
 
-def fetch_and_update_data(delay: float = 0.1):
+
+# /* gọi hàm fetch 15m và ghi data vào file
+def fetch_and_update_data(delay: float = 0.1) -> Dict[str, pd.DataFrame]:
     """
     Fetch 1 nến 15m mới nhất cho tất cả symbol và append vào Excel.
     Trả về all_data dict {symbol: df} để generate_report sử dụng.
@@ -215,23 +214,21 @@ def fetch_and_update_data(delay: float = 0.1):
     """
     all_data = {}
 
-    # 🔥 chỉ gọi 1 lần
+    # gọi server time 1 lần + delay 2s để chắc chắn nến đã đóng
     server_ms = get_binance_server_time()
-    time.sleep(2) 
+    time.sleep(2)
+
     for symbol in SYMBOLS_LIST:
         try:
-            print(f"[DEBUG] Fetching latest 1 candle for {symbol}...")
 
             excel_file = os.path.join(DATA_FOLDER, f"{symbol}_data.xlsx")
-            fetch_append_latest_15m_candle(symbol, excel_file, server_ms=server_ms)
+            df = fetch_append_latest_15m_candle(symbol, excel_file, server_ms=server_ms)
 
-            # đọc lại toàn bộ dữ liệu từ Excel để dùng cho report
-            if os.path.exists(excel_file):
-                df = pd.read_excel(excel_file)
+            if df is not None and not df.empty:
                 all_data[symbol] = df
                 print(f"[DEBUG] {symbol}: {len(df)} rows loaded for report")
             else:
-                print(f"[DEBUG] {symbol}: file not found after append")
+                print(f"[DEBUG] {symbol}: no data after append")
 
         except Exception as e:
             print(f"[DEBUG] Error updating {symbol}: {e}")
@@ -242,6 +239,7 @@ def fetch_and_update_data(delay: float = 0.1):
     return all_data
 
 
+#  gọi all dâta
 def fetch_all_data(delay=0.2, retries=1):
     """
     Lấy dữ liệu cho tất cả các đồng coin trong SYMBOLS_LIST.
@@ -255,7 +253,6 @@ def fetch_all_data(delay=0.2, retries=1):
             try:
                 df = fetch_15m_closed_klines(symbol, limit=30)
                 all_data[symbol] = df
-                print(f"✅ {symbol}: fetched {len(df)} rows")
                 break
             except Exception as e:
                 print(f"⚠️ Error fetching {symbol} (attempt {attempt+1}/{retries}): {e}")
@@ -269,27 +266,53 @@ def fetch_all_data(delay=0.2, retries=1):
     return all_data
 
 
+# # ghi vào excel
+# def save_data_to_excel(all_data):
+#     # Tạo thư mục datafiles nếu chưa có
+#     if not os.path.exists('datafiles'):
+#         os.makedirs('datafiles')
+    
+#     # Lưu dữ liệu vào từng file Excel riêng biệt cho mỗi đồng coin
+#     for symbol, data in all_data.items():
+#         # Đặt tên file theo tên đồng coin, ví dụ: BTCUSDT.xlsx
+#         file_path = f'datafiles/{symbol}_data.xlsx'
+#         data.to_excel(file_path, index=False)
 
+
+#  For debug
 def save_data_to_excel(all_data):
     # Tạo thư mục datafiles nếu chưa có
     if not os.path.exists('datafiles'):
         os.makedirs('datafiles')
-    
+        print("[DEBUG] Created folder: datafiles")
+
     # Lưu dữ liệu vào từng file Excel riêng biệt cho mỗi đồng coin
     for symbol, data in all_data.items():
-        # Đặt tên file theo tên đồng coin, ví dụ: BTCUSDT.xlsx
         file_path = f'datafiles/{symbol}_data.xlsx'
-        data.to_excel(file_path, index=False)
+        print(f"[DEBUG] Saving {symbol} to {os.path.abspath(file_path)} with {len(data)} rows")
+        abs_path = os.path.abspath(file_path)
+        try:
+            data.to_excel(file_path, index=False)
+            print(f"[DEBUG] Saved {symbol} successfully")
+            print(f"[DEBUG] ✅ Saved {symbol} -> {abs_path} ({len(data)} rows)")
+        except Exception as e:
+            print(f"[ERROR] ❌ Failed to save {symbol} -> {abs_path}: {e}")
+
 
 from datetime import datetime
+
+
 
 def calculate_delta_change(open_price, close_price):
     """Tính toán tỷ lệ thay đổi giá từ mở đến đóng."""
     return round((close_price - open_price) / open_price, 4)  # Làm tròn đến 4 chữ số sau dấu phẩy
 
+
+
 def calculate_average_volume(df, window=20):
     """Tính toán trung bình khối lượng của 20 nến gần nhất."""
     return df['volume'].rolling(window=window).mean()
+
 
 # debug function function
 def generate_report(all_data):
@@ -320,7 +343,7 @@ def generate_report(all_data):
                         formatted_timestamp = str(last_timestamp)  # fallback
                     
                     # Điều kiện log
-                    if last_delta_change > 0 and last_volume >= 4.3 * avg_volume_20:
+                    if last_delta_change > 0 and last_volume >= 4.7 * avg_volume_20:
                         line = f"{symbol} - Delta Change: {last_delta_change:.4f} at {formatted_timestamp}\n"
                         file.write(line)
                         print(f"[INFO] {symbol} thỏa điều kiện -> ghi vào report.")

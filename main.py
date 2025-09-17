@@ -37,6 +37,7 @@ def main():
 
         print("Saving data to Excel...")
         save_data_to_excel(all_data)
+        print(f"[DEBUG] Files currently in {DATA_FOLDER}: {os.listdir(DATA_FOLDER)}")
         print("Data saved to Excel successfully.")
 
         print("Generating report...")
@@ -61,7 +62,7 @@ def wait_until_next_quarter():
     # Giới hạn khung giờ 6:00–20:00
     if now.hour < 6:
         next_run = now.replace(hour=6, minute=0, second=0, microsecond=0)
-    elif now.hour >= 23:
+    elif now.hour >= 22:
         tomorrow = now + timedelta(days=1)
         next_run = tomorrow.replace(hour=6, minute=0, second=0, microsecond=0)
 
@@ -73,14 +74,71 @@ def wait_until_next_quarter():
 
 # --- Vòng lặp chính ---
 if __name__ == "__main__":
+    # --- Khai báo khung giờ cho phép chạy (local time) ---
+    # Mỗi tuple: (start_hour, start_minute, end_hour, end_minute)
+    ALLOWED_WINDOWS = [
+        (6, 0, 10, 30),    # 06:00 -> 10:30
+        (12, 30, 14, 30),  # 12:30 -> 14:30
+        (17, 30, 19, 30),  # 17:30 -> 19:30
+        (22, 0, 23, 30),   # 22:00 -> 23:30
+    ]
+
+    def _in_allowed_window(now_dt):
+        """Trả True nếu now_dt rơi trong 1 trong các khung giờ cho phép."""
+        for sh, sm, eh, em in ALLOWED_WINDOWS:
+            start = now_dt.replace(hour=sh, minute=sm, second=0, microsecond=0)
+            end = now_dt.replace(hour=eh, minute=em, second=0, microsecond=0)
+            if start <= now_dt < end:
+                return True
+        return False
+
+    def _next_allowed_start(now_dt):
+        """
+        Trả về datetime của start window tiếp theo (cùng ngày hoặc ngày sau).
+        Nếu now_dt đang trong window -> trả về now_dt (không sleep).
+        """
+        # Nếu đang trong window, trả chính now_dt (caller sẽ tiếp tục làm việc)
+        if _in_allowed_window(now_dt):
+            return now_dt
+
+        # Kiểm tra các window còn lại trong cùng ngày
+        candidates = []
+        for sh, sm, eh, em in ALLOWED_WINDOWS:
+            start = now_dt.replace(hour=sh, minute=sm, second=0, microsecond=0)
+            if start > now_dt:
+                candidates.append(start)
+
+        if candidates:
+            return min(candidates)
+
+        # Không còn window trong hôm nay -> trả về start của window đầu tiên ngày mai
+        sh, sm, eh, em = ALLOWED_WINDOWS[0]
+        tomorrow = now_dt + timedelta(days=1)
+        return tomorrow.replace(hour=sh, minute=sm, second=0, microsecond=0)
+
+    # --- Vòng lặp chính ---
     while True:
         now_local = datetime.now()
+        print(f"[DEBUG] Loop tick at local time: {now_local.strftime('%Y-%m-%d %H:%M:%S')}")
+
+        # Nếu hiện tại KHÔNG nằm trong khung cho phép -> sleep tới start tiếp theo rồi continue
+        if not _in_allowed_window(now_local):
+            next_start = _next_allowed_start(now_local)
+            sleep_seconds = (next_start - now_local).total_seconds()
+            # bảo đảm sleep ít nhất 1 giây nếu sai số âm
+            if sleep_seconds <= 0:
+                sleep_seconds = 1
+            print(f"[DEBUG] Now is outside allowed windows. Sleeping until next allowed start: {next_start.strftime('%Y-%m-%d %H:%M:%S')} (sleep {int(sleep_seconds)}s)")
+            time.sleep(sleep_seconds)
+            continue  # quay lại kiểm tra (không gọi main hoặc fetch)
+
+        # Nếu đến đây nghĩa là đang ở trong 1 khung giờ cho phép -> chạy logic cũ
         fetch_full = False
 
-        # Case 1: 6:00 sáng → fetch full
+        # Case 1: 6:00 sáng → fetch full (giữ nguyên hành vi)
         if now_local.hour == 6 and now_local.minute == 0:
             fetch_full = True
-            print(f"[DEBUG] Time is 6:00 → fetch_full = True")
+            print(f"[DEBUG] Time is 06:00 → fetch_full = True")
         else:
             # Case 2: kiểm tra file dữ liệu → fetch full nếu mất hoặc cũ
             for symbol in SYMBOLS_LIST:
@@ -97,10 +155,8 @@ if __name__ == "__main__":
 
                     if last_ts.tzinfo is None:
                         last_ts = last_ts.tz_localize("UTC")
-                        print(f"[DEBUG] {symbol}: tz_localize applied -> last_ts = {last_ts}")
                     else:
                         last_ts = last_ts.tz_convert("UTC")
-                        print(f"[DEBUG] {symbol}: tz_convert applied -> last_ts = {last_ts}")
 
                 except Exception as e:
                     fetch_full = True
@@ -112,6 +168,7 @@ if __name__ == "__main__":
 
                 if gap_minutes > 60:
                     fetch_full = True
+                    print(f"[DEBUG] {symbol}: gap_minutes = {gap_minutes:.1f} > 60 → fetch_full = True")
                     break
             else:
                 fetch_full = False
@@ -123,12 +180,13 @@ if __name__ == "__main__":
             main()
         else:
             print(f"[INFO] Fetching only latest 1 candle for all symbols...")
-            # 1. Fetch 1 nến cho tất cả symbol (hàm gốc tự loop SYMBOLS_LIST)
+            # 1. Fetch 1 nến cho tất cả symbol
             try:
                 all_data = fetch_and_update_data()
                 print(f"[DEBUG] 1-candle fetch_and_update_data completed")
             except Exception as e:
                 print(f"[DEBUG] error updating 1 candle -> {e}")
+                all_data = {}
 
             # 2. Generate report
             try:
@@ -150,4 +208,5 @@ if __name__ == "__main__":
             finally:
                 REPORT_READY = False
 
+        # Chờ tới quý 15 phút tiếp theo (hàm hiện có của bạn)
         wait_until_next_quarter()

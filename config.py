@@ -150,7 +150,9 @@ SYMBOLS_LIST = [
     "1000SATSUSDT",
     "PUMPUSDT",
     "AVNTUSDT",
-    "ACEUSDT"
+    "ACEUSDT",
+    "ESPORTSUSDT",
+    "MERLUSDT"
 
     # coin list to be check
 ]
