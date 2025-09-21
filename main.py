@@ -71,16 +71,14 @@ def wait_until_next_quarter():
     time.sleep(sleep_seconds)
 
 
-
 # --- Vòng lặp chính ---
 if __name__ == "__main__":
     # --- Khai báo khung giờ cho phép chạy (local time) ---
-    # Mỗi tuple: (start_hour, start_minute, end_hour, end_minute)
     ALLOWED_WINDOWS = [
-        (6, 0, 10, 30),    # 06:00 -> 10:30
-        (12, 30, 14, 30),  # 12:30 -> 14:30
-        (17, 30, 19, 30),  # 17:30 -> 19:30
-        (22, 0, 23, 30),   # 22:00 -> 23:30
+        (6, 0, 10, 50),    # 06:00 -> 10:30 (+5p tolerance)
+        (12, 30, 14, 35),  # 12:30 -> 14:30 (+1p tolerance start, +1p tolerance end)
+        (17, 30, 19, 35),  # 17:30 -> 19:30 (+1p tolerance end)
+        (22, 0, 23, 50),   # 22:00 -> 23:30 (+5p tolerance)
     ]
 
     def _in_allowed_window(now_dt):
@@ -97,7 +95,6 @@ if __name__ == "__main__":
         Trả về datetime của start window tiếp theo (cùng ngày hoặc ngày sau).
         Nếu now_dt đang trong window -> trả về now_dt (không sleep).
         """
-        # Nếu đang trong window, trả chính now_dt (caller sẽ tiếp tục làm việc)
         if _in_allowed_window(now_dt):
             return now_dt
 
@@ -125,22 +122,25 @@ if __name__ == "__main__":
         if not _in_allowed_window(now_local):
             next_start = _next_allowed_start(now_local)
             sleep_seconds = (next_start - now_local).total_seconds()
-            # bảo đảm sleep ít nhất 1 giây nếu sai số âm
             if sleep_seconds <= 0:
                 sleep_seconds = 1
             print(f"[DEBUG] Now is outside allowed windows. Sleeping until next allowed start: {next_start.strftime('%Y-%m-%d %H:%M:%S')} (sleep {int(sleep_seconds)}s)")
             time.sleep(sleep_seconds)
-            continue  # quay lại kiểm tra (không gọi main hoặc fetch)
+            continue
 
-        # Nếu đến đây nghĩa là đang ở trong 1 khung giờ cho phép -> chạy logic cũ
+        # Nếu đến đây nghĩa là đang ở trong 1 khung giờ cho phép -> quyết định fetch_full
         fetch_full = False
 
-        # Case 1: 6:00 sáng → fetch full (giữ nguyên hành vi)
-        if now_local.hour == 6 and now_local.minute == 0:
-            fetch_full = True
-            print(f"[DEBUG] Time is 06:00 → fetch_full = True")
-        else:
-            # Case 2: kiểm tra file dữ liệu → fetch full nếu mất hoặc cũ
+        # --- Case 1: Đầu mỗi window ±5p → fetch full ---
+        for sh, sm, eh, em in ALLOWED_WINDOWS:
+            start = now_local.replace(hour=sh, minute=sm, second=0, microsecond=0)
+            if start <= now_local <= start + timedelta(minutes=5):
+                fetch_full = True
+                print(f"[DEBUG] {now_local} → đầu window {sh:02d}:{sm:02d} → fetch_full = True")
+                break
+
+        # --- Case 2: kiểm tra file dữ liệu ---
+        if not fetch_full:
             for symbol in SYMBOLS_LIST:
                 excel_file = os.path.join(DATA_FOLDER, f"{symbol}_data.xlsx")
 
@@ -171,7 +171,6 @@ if __name__ == "__main__":
                     print(f"[DEBUG] {symbol}: gap_minutes = {gap_minutes:.1f} > 60 → fetch_full = True")
                     break
             else:
-                fetch_full = False
                 print(f"[DEBUG] All files OK and recent → fetch_full = False")
 
         # --- Thực hiện fetch ---
@@ -180,7 +179,6 @@ if __name__ == "__main__":
             main()
         else:
             print(f"[INFO] Fetching only latest 1 candle for all symbols...")
-            # 1. Fetch 1 nến cho tất cả symbol
             try:
                 all_data = fetch_and_update_data()
                 print(f"[DEBUG] 1-candle fetch_and_update_data completed")
@@ -188,7 +186,6 @@ if __name__ == "__main__":
                 print(f"[DEBUG] error updating 1 candle -> {e}")
                 all_data = {}
 
-            # 2. Generate report
             try:
                 print(f"[DEBUG] Generating report after 1-candle fetch...")
                 generate_report(all_data)
@@ -208,5 +205,5 @@ if __name__ == "__main__":
             finally:
                 REPORT_READY = False
 
-        # Chờ tới quý 15 phút tiếp theo (hàm hiện có của bạn)
+        # Chờ tới quý 15 phút tiếp theo
         wait_until_next_quarter()
